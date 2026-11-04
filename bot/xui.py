@@ -13,7 +13,6 @@ GB = 1024**3
 class XUIError(Exception):
     pass
 
-
 class XUI:
     """Минимальный клиент API панели 3x-ui (cookie-сессия, авто-перелогин)."""
 
@@ -60,9 +59,13 @@ class XUI:
                         continue
                     if r.status != 200:
                         raise XUIError(f"3x-ui вернул HTTP {r.status} для {path}")
-                    body = await r.json(content_type=None)
+                    text = await r.text()
             except aiohttp.ClientError as e:
                 raise XUIError(f"Нет связи с 3x-ui: {e}") from e
+            try:
+                body = json.loads(text)
+            except ValueError:
+                raise XUIError(f"3x-ui вернул не JSON для {path}: {text[:100]!r}") from None
             if not body.get("success"):
                 raise XUIError(f"3x-ui: {body.get('msg')}")
             return body.get("obj")
@@ -100,9 +103,13 @@ class XUI:
         await self._call("POST", f"/panel/api/inbounds/updateClient/{uuid}", data)
 
     async def get_traffic(self, tg_id: int) -> dict | None:
-        return await self._call(
-            "GET", f"/panel/api/inbounds/getClientTraffics/{self.email_for(tg_id)}"
-        )
+        """Статистика клиента берётся из inbound'а (clientStats): этот путь стабилен в разных версиях 3x-ui."""
+        inbound = await self._call("GET", f"/panel/api/inbounds/get/{settings.xui_inbound_id}")
+        email = self.email_for(tg_id)
+        for stat in (inbound or {}).get("clientStats") or []:
+            if stat.get("email") == email:
+                return stat
+        return None
 
 
 xui = XUI()
