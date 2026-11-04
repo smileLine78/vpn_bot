@@ -53,7 +53,7 @@ class Tariff:
 TARIFFS: dict[str, Tariff] = {
     t.key: t
     for t in [
-        Tariff("m1", "1 месяц", 30, 150, 199, 2.5),
+        Tariff("m1", "1 месяц", 30, 150, 20, 2.5),
         Tariff("m3", "3 месяца", 90, 400, 499, 6.5),
         Tariff("m12", "12 месяцев", 365, 1400, 1790, 22.0),
     ]
