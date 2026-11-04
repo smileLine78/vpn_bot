@@ -13,15 +13,23 @@ def is_admin(message: Message) -> bool:
     return message.from_user.id in settings.admins
 
 
+def fmt_amount(currency: str, amount: int) -> str:
+    if currency == "XTR":
+        return f"{amount} ⭐"
+    return f"{amount / 100:.2f} {currency}"
+
+
 @router.message(Command("stats"))
 async def stats(message: Message):
     if not is_admin(message):
         return
     s = await db.stats()
+    revenue = ", ".join(fmt_amount(c, a) for c, a in s["revenue"].items()) or "—"
     await message.answer(
         f"👥 Пользователей: {s['users']}\n"
         f"✅ Активных подписок: {s['active']}\n"
-        f"💳 Платежей: {s['payments']} ({s['stars']} ⭐)"
+        f"💳 Платежей: {s['payments']}\n"
+        f"💰 Выручка: {revenue}"
     )
 
 

@@ -1,11 +1,12 @@
 import asyncio
+import contextlib
 import logging
 
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-from . import db
+from . import crypto, db
 from .config import settings
 from .handlers import admin, payments, user
 from .xui import xui
@@ -19,9 +20,17 @@ async def main():
     dp = Dispatcher()
     dp.include_routers(admin.router, payments.router, user.router)
 
+    poller = None
+    if settings.crypto_pay_token:
+        poller = asyncio.create_task(crypto.poll_loop(bot))
+
     try:
         await dp.start_polling(bot)
     finally:
+        if poller:
+            poller.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await poller
         await xui.close()
         await bot.session.close()
 

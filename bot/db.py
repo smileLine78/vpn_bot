@@ -20,7 +20,15 @@ CREATE TABLE IF NOT EXISTS payments (
     tg_id INTEGER,
     tariff TEXT,
     amount INTEGER,
+    currency TEXT DEFAULT 'XTR',
     charge_id TEXT UNIQUE,
+    created_at INTEGER
+);
+CREATE TABLE IF NOT EXISTS crypto_invoices (
+    invoice_id INTEGER PRIMARY KEY,
+    tg_id INTEGER,
+    tariff TEXT,
+    status TEXT DEFAULT 'active',
     created_at INTEGER
 );
 """
@@ -34,6 +42,11 @@ async def init():
     os.makedirs(os.path.dirname(settings.db_path) or ".", exist_ok=True)
     async with _connect() as db:
         await db.executescript(SCHEMA)
+        # миграция для баз, созданных до появления оплаты в других валютах
+        try:
+            await db.execute("ALTER TABLE payments ADD COLUMN currency TEXT DEFAULT 'XTR'")
+        except aiosqlite.OperationalError:
+            pass  # колонка уже есть
         await db.commit()
 
 
@@ -70,16 +83,45 @@ async def mark_trial_used(tg_id: int):
         await db.commit()
 
 
-async def add_payment(tg_id: int, tariff: str, amount: int, charge_id: str) -> bool:
-    """False, если платёж с таким charge_id уже обработан."""
+async def add_payment(tg_id: int, tariff: str, amount: int, currency: str, charge_id: str) -> bool:
+    """amount — в минимальных единицах (копейки, центы; для Stars — штуки).
+    False, если платёж с таким charge_id уже обработан."""
     async with _connect() as db:
         cur = await db.execute(
-            "INSERT OR IGNORE INTO payments (tg_id, tariff, amount, charge_id, created_at) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (tg_id, tariff, amount, charge_id, int(time.time())),
+            "INSERT OR IGNORE INTO payments (tg_id, tariff, amount, currency, charge_id, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (tg_id, tariff, amount, currency, charge_id, int(time.time())),
         )
         await db.commit()
         return cur.rowcount > 0
+
+
+async def add_crypto_invoice(invoice_id: int, tg_id: int, tariff: str):
+    async with _connect() as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO crypto_invoices (invoice_id, tg_id, tariff, created_at) "
+            "VALUES (?, ?, ?, ?)",
+            (invoice_id, tg_id, tariff, int(time.time())),
+        )
+        await db.commit()
+
+
+async def pending_crypto_invoices() -> list[dict]:
+    async with _connect() as db:
+        db.row_factory = aiosqlite.Row
+        async with db.execute(
+            "SELECT * FROM crypto_invoices WHERE status = 'active' AND created_at > ?",
+            (int(time.time()) - 86400,),
+        ) as cur:
+            return [dict(r) for r in await cur.fetchall()]
+
+
+async def set_crypto_status(invoice_id: int, status: str):
+    async with _connect() as db:
+        await db.execute(
+            "UPDATE crypto_invoices SET status = ? WHERE invoice_id = ?", (status, invoice_id)
+        )
+        await db.commit()
 
 
 async def stats() -> dict:
@@ -89,9 +131,14 @@ async def stats() -> dict:
             async with db.execute(sql, args) as cur:
                 return (await cur.fetchone())[0] or 0
 
+        async with db.execute(
+            "SELECT currency, SUM(amount) FROM payments GROUP BY currency"
+        ) as cur:
+            revenue = {row[0]: row[1] for row in await cur.fetchall()}
+
         return {
             "users": await one("SELECT COUNT(*) FROM users"),
             "active": await one("SELECT COUNT(*) FROM users WHERE expiry_ms > ?", now_ms),
             "payments": await one("SELECT COUNT(*) FROM payments"),
-            "stars": await one("SELECT SUM(amount) FROM payments"),
+            "revenue": revenue,
         }

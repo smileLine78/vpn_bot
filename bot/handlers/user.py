@@ -3,10 +3,10 @@ from datetime import datetime
 
 from aiogram import F, Router
 from aiogram.filters import CommandStart
-from aiogram.types import CallbackQuery, LabeledPrice, Message
+from aiogram.types import CallbackQuery, Message
 
 from .. import db, keyboards as kb, services
-from ..config import TARIFFS, settings
+from ..config import settings
 from ..xui import XUIError, xui
 
 router = Router()
@@ -74,23 +74,6 @@ async def trial(call: CallbackQuery):
 @router.callback_query(F.data == "buy")
 async def buy(call: CallbackQuery):
     await call.message.edit_text("Выберите тариф (безлимитный трафик):", reply_markup=kb.tariffs())
-    await call.answer()
-
-
-@router.callback_query(F.data.startswith("tariff:"))
-async def tariff(call: CallbackQuery):
-    t = TARIFFS.get(call.data.split(":", 1)[1])
-    if not t:
-        await call.answer("Тариф не найден", show_alert=True)
-        return
-    await call.message.answer_invoice(
-        title=f"VPN — {t.title}",
-        description=f"Доступ к VPN на {t.days} дн.",
-        payload=f"tariff:{t.key}",
-        currency="XTR",  # Telegram Stars, provider_token не нужен
-        prices=[LabeledPrice(label=t.title, amount=t.stars)],
-        provider_token="",
-    )
     await call.answer()
 
 

@@ -13,6 +13,7 @@ GB = 1024**3
 class XUIError(Exception):
     pass
 
+
 class XUI:
     """Минимальный клиент API панели 3x-ui (cookie-сессия, авто-перелогин)."""
 
